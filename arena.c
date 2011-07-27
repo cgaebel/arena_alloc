@@ -13,17 +13,16 @@
  * What about 0 bits of overhead per object? =)
  */
 
+// This is actually a shadow structure in that we allocate AT LEAST enough
+// space for a node. An unallocated node uses the structure to store a pointer
+// to the next free node. When the node is allocated, the whole structure
+// (including the space for the `next' pointer) is used for user data.
 union node {
     union node* next; // Points to the next free object in the buffer.
-    char contents[1]; // It's really a flexible-sized array, but C99 doesn't
-                      // allow that in this hacky case.
 };
 
 struct arena {
-    size_t size;  // The size of each object.
-    size_t count; // The number of objects in the arena (used + unused).
     union node* first_free; // points to the first free object in the buffer.
-
     union node buffer[];
 };
 
@@ -35,6 +34,13 @@ static inline size_t align(size_t n, size_t alignment)
     else                return align_down + alignment;
 }
 
+static inline union node* index_buffer(size_t node_size,
+                                       union node buffer[node_size],
+                                       size_t index)
+{
+    return &buffer[index];
+}
+
 struct arena* arena_init(size_t size, size_t count)
 {
     // Align the size to the node next pointer, to allow more efficient aligned
@@ -43,14 +49,16 @@ struct arena* arena_init(size_t size, size_t count)
     size = align(size, sizeof(union node*));
 
     // Allocate space for both the arena and the buffer in one go.
-    struct arena* a = malloc(sizeof(a->size) + sizeof(a->count) + size // The arena metadata.
-                             + (count * size)); // The buffer.
+    struct arena* a = malloc(sizeof(a->first_free) + count * size);
 
-    a->size  = size;
-    a->count = count;
-
+    // Creates a simple linear linked list.
     for(size_t i = 1; i <= count; ++i)
-        a->buffer[i-1].next = i != count ? &a->buffer[i] : NULL;
+    {
+        union node* current = index_buffer(size, a->buffer, i-1);
+        union node* next    = index_buffer(size, a->buffer, i  );
+
+        current->next = i != count ? next : NULL;
+    }
 
     a->first_free = a->buffer;
 
@@ -62,7 +70,7 @@ void* arena_alloc(struct arena* a)
     if(a->first_free == NULL)
         return NULL;
 
-    void* ret = a->first_free->contents;
+    void* ret = a->first_free;
 
     a->first_free = a->first_free->next;
 
