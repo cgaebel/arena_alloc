@@ -34,11 +34,11 @@ static inline size_t align(size_t n, size_t alignment)
     else                return align_down + alignment;
 }
 
-static inline union node* index_buffer(size_t node_size,
-                                       union node buffer[node_size],
+static inline union node* index_buffer(union node* buffer,
+                                       size_t node_size,
                                        size_t index)
 {
-    return &buffer[index];
+    return (union node*)((char*)buffer + node_size*index);
 }
 
 struct arena* arena_init(size_t size, size_t count)
@@ -54,8 +54,8 @@ struct arena* arena_init(size_t size, size_t count)
     // Creates a simple linear linked list.
     for(size_t i = 1; i <= count; ++i)
     {
-        union node* current = index_buffer(size, a->buffer, i-1);
-        union node* next    = index_buffer(size, a->buffer, i  );
+        union node* current = index_buffer(a->buffer, size, i-1);
+        union node* next    = index_buffer(a->buffer, size, i  );
 
         current->next = i != count ? next : NULL;
     }
