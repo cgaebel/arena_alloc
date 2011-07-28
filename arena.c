@@ -1,7 +1,5 @@
 #include "arena.h"
 
-#include <stdlib.h>
-
 /**
  * saucetenuto (reddit):
  *
@@ -10,8 +8,20 @@
  *
  * Clark:
  *
- * What about 0 bits of overhead per object? =)
+ * What about 0 bits of overhead per object, with 3 instruction allocation? =)
+ *
+ * Of course, this comes with tradeoffs:
+ *   1) Resetting and allocating the arena is O(n).
+ *   2) Double free, dangling pointers, etc. will wreak havok with the arena.
+ *      Currently, there's no support for debugging this. Not even valgrind
+ *      will help. You'll just get crazy memory corruption.
  */
+
+// Default implementation - just use standard malloc + free. Feel free to
+// change this to suit your needs.
+#include <stdlib.h>
+#define ALLOC malloc
+#define FREE  free
 
 // This is actually a shadow structure in that we allocate AT LEAST enough
 // space for a node. An unallocated node uses the structure to store a pointer
@@ -52,10 +62,10 @@ struct arena* arena_init(size_t size, size_t count)
     size = align(size, sizeof(union node*));
 
     // Allocate space for both the arena and the buffer in one go.
-    struct arena* a = malloc(sizeof(a->first_free) +
-                             sizeof(a->size) +
-                             sizeof(a->count) +
-                             count * size);
+    struct arena* a = ALLOC(sizeof(a->first_free) +
+                            sizeof(a->size) +
+                            sizeof(a->count) +
+                            count * size);
 
     a->size = size;
     a->count = count;
@@ -70,27 +80,31 @@ void arena_reset(struct arena* a)
     size_t size  = a->size,
            count = a->count;
 
-    for(size_t i = 1; i <= count; ++i)
+    if(count == 0) return;
+
+    // Set up every element but the last to point to the node next to it.
+    for(size_t i = 1; i <= count-1; ++i)
     {
         union node* current = index_buffer(a->buffer, size, i-1);
         union node* next    = index_buffer(a->buffer, size, i  );
 
-        current->next = i != count ? next : NULL;
+        current->next = next;
     }
 
-    a->first_free = count != 0 ? a->buffer : NULL;
+    // For the last element, have the next pointer going to NULL, creating an
+    // array representing a linked list. =)
+    index_buffer(a->buffer, size, count-1)->next = NULL;
+
+    a->first_free = a->buffer;
 }
 
 void* arena_alloc(struct arena* a)
 {
-    if(a->first_free == NULL)
-        return NULL;
+    if(a->first_free == NULL) return NULL;
 
-    void* ret = a->first_free;
-
-    a->first_free = a->first_free->next;
-
-    return ret;
+    union node* e = a->first_free;
+    a->first_free = e->next;
+    return e;
 }
 
 void arena_free(struct arena* a, void* p)
@@ -104,5 +118,5 @@ void arena_free(struct arena* a, void* p)
 
 void arena_destroy(struct arena* a)
 {
-    free(a);
+    FREE(a);
 }

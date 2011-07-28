@@ -16,7 +16,10 @@ struct arena;
 
 struct arena* arena_init(size_t size, size_t count);
 
-/* Frees everything allocated with the arena. */
+/**
+ * Frees everything allocated with the arena. This is O(n), but is comparable
+ * in speed to a memset, so don't worry about it.
+ */
 void arena_reset(struct arena*);
 
 void* arena_alloc(struct arena*);
