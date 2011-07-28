@@ -1,5 +1,4 @@
 #pragma once
-
 #include <stddef.h>
 
 /**
@@ -16,6 +15,9 @@
 struct arena;
 
 struct arena* arena_init(size_t size, size_t count);
+
+/* Frees everything allocated with the arena. */
+void arena_reset(struct arena*);
 
 void* arena_alloc(struct arena*);
 void arena_free(struct arena*, void*);

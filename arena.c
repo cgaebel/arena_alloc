@@ -22,6 +22,9 @@ union node {
 };
 
 struct arena {
+    size_t size;  // the size of each node.
+    size_t count; // the number of nodes in the buffer.
+
     union node* first_free; // points to the first free object in the buffer.
     union node buffer[];
 };
@@ -49,9 +52,24 @@ struct arena* arena_init(size_t size, size_t count)
     size = align(size, sizeof(union node*));
 
     // Allocate space for both the arena and the buffer in one go.
-    struct arena* a = malloc(sizeof(a->first_free) + count * size);
+    struct arena* a = malloc(sizeof(a->first_free) +
+                             sizeof(a->size) +
+                             sizeof(a->count) +
+                             count * size);
 
-    // Creates a simple linear linked list.
+    a->size = size;
+    a->count = count;
+
+    arena_reset(a);
+
+    return a;
+}
+
+void arena_reset(struct arena* a)
+{
+    size_t size  = a->size,
+           count = a->count;
+
     for(size_t i = 1; i <= count; ++i)
     {
         union node* current = index_buffer(a->buffer, size, i-1);
@@ -60,9 +78,7 @@ struct arena* arena_init(size_t size, size_t count)
         current->next = i != count ? next : NULL;
     }
 
-    a->first_free = a->buffer;
-
-    return a;
+    a->first_free = count != 0 ? a->buffer : NULL;
 }
 
 void* arena_alloc(struct arena* a)
