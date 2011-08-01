@@ -12,6 +12,46 @@
  * Clark:
  *
  * What about 0 bits of overhead per object, with O(1) reset, alloc, and free?
+ *
+ * HOW IT WORKS:
+ *
+ * The arena consists of two parts - a raw buffer which allocations are made
+ * out of and a linked list of unallocated elements.
+ *
+ * When the arena is first initialized, the linked list of free elements is
+ * empty since no elements have yet been freed. bufstart is then set to the
+ * beginning of the buffer so for the next little while, allocations can just
+ * move the pointer forward to get the next chunk.
+ *
+ * When arena_free gets called on previously allocated memory, it just prepends
+ * the newly freed chunk to the free list. In this implementation, the first few
+ * bytes of the memory given to the user get used for this purpose.
+ *
+ * When we've given out the whole buffer (with alloc_free) possibly being
+ * called throughout this, we set lazy_init to false since all elements are now
+ * either in the free list or have been allocated to the user.
+ *
+ * Now all allocations just consist of lopping off the head of the free list
+ * and reusing it.
+ *
+ * Finally, if an arena reset happens, we just set lazy_init to true, move
+ * bufstart back where it belongs, and empty the free list. Note that we don't
+ * actually have to walk the free list, since the contents of each node is
+ * undefined anyhow, and the memory won't leak since it's all in the buffer.
+ *
+ * And voila: O(1) allocation, deallocation, and resetting, in ~100LOC
+ *
+ * Now a word about debugging and safety.
+ *
+ * Heap corruption is detected by placing 64 guard bits in the beginning of the
+ * allocation handed to the user. If they are modified while the data has been
+ * freed, signal an error. This helps guard against dangling pointers and
+ *
+ * We also use check_heap, an O(n) function which detects cycles in the free
+ * list; and detect_double_free, an O(n) function which walks the free list
+ * looking for the element we're about to free. Note that by using these,
+ * arena_reset and arena_free become O(n), kind of defeating the purpose of
+ * this arena. But at least it's safe, dammit.
  */
 
 /*** BEGIN CUSTOMIZATION ***/
@@ -60,15 +100,6 @@ struct node {
 // most entropy is in the LSBs, where most manipulation takes place.
 #define GUARD_BITS 0xFF30000811100F1B
 
-/**
- * TODO
- *   - Debug arena. Double-free and overflow protection.
- *   - Document arena internals.
- *       - lazy initializaiton
- *       - user data and arena data sharing space -> 0 overhead
- *       - Efficiency
- *       - Dangers.
- */
 struct arena {
     size_t size;    // The size of each node.
     size_t count;   // The number of nodes in the buffer.
@@ -162,7 +193,7 @@ void arena_reset(struct arena* a)
     check_heap(a);
 
     a->lazy_init = true;
-    a->bufstart = a->buffer;
+    a->bufstart  = a->buffer;
     a->free_list = NULL;
     // a->bufend never changes. Leave it alone.
 }

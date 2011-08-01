@@ -12,6 +12,7 @@
  * Hell if I know. ;)
  */
 
+/* Note: All operations on the arena are O(1) if DEBUG is not defined. */
 struct arena;
 
 /*
